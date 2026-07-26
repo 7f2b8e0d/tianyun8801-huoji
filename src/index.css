@@ -122,11 +122,10 @@ textarea {
   background: transparent;
   color: var(--ink);
   cursor: pointer;
-  margin-left: auto;
 }
 
-.topbar__actions .icon-btn {
-  margin-left: 0;
+.topbar > .icon-btn:last-child {
+  margin-left: auto;
 }
 
 .icon-btn:hover {

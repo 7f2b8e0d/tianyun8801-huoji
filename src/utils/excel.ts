@@ -4,7 +4,8 @@ import { getImageBlob } from '../db'
 import { formatTime } from './format'
 
 const EMU_PER_PX = 9525
-const THUMB_PX = 96
+/** Display size in sheet only; embedded file keeps original pixels. */
+const DISPLAY_PX = 120
 const GAP_PX = 8
 
 function esc(v: string): string {
@@ -26,28 +27,37 @@ function cellRef(col: number, row: number): string {
   return `${sb}${row}`
 }
 
-async function compressImage(blob: Blob): Promise<Uint8Array | null> {
+function imageFormat(blob: Blob): { ext: string; contentType: string } {
+  const type = (blob.type || '').toLowerCase()
+  if (type.includes('png')) return { ext: 'png', contentType: 'image/png' }
+  if (type.includes('webp')) return { ext: 'webp', contentType: 'image/webp' }
+  if (type.includes('gif')) return { ext: 'gif', contentType: 'image/gif' }
+  return { ext: 'jpg', contentType: 'image/jpeg' }
+}
+
+async function prepareImage(blob: Blob): Promise<{
+  bytes: Uint8Array
+  displayW: number
+  displayH: number
+  ext: string
+  contentType: string
+} | null> {
   try {
-    const bitmap = await createImageBitmap(blob)
-    const maxSide = Math.max(bitmap.width, bitmap.height)
-    const ratio = maxSide > THUMB_PX ? THUMB_PX / maxSide : 1
-    const w = Math.max(1, Math.round(bitmap.width * ratio))
-    const h = Math.max(1, Math.round(bitmap.height * ratio))
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
+    const { ext, contentType } = imageFormat(blob)
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    let displayW = DISPLAY_PX
+    let displayH = DISPLAY_PX
+    try {
+      const bitmap = await createImageBitmap(blob)
+      const maxSide = Math.max(bitmap.width, bitmap.height) || 1
+      const ratio = Math.min(1, DISPLAY_PX / maxSide)
+      displayW = Math.max(1, Math.round(bitmap.width * ratio))
+      displayH = Math.max(1, Math.round(bitmap.height * ratio))
       bitmap.close()
-      return null
+    } catch {
+      // keep square fallback
     }
-    ctx.drawImage(bitmap, 0, 0, w, h)
-    bitmap.close()
-    const out = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.85)
-    )
-    if (!out) return null
-    return new Uint8Array(await out.arrayBuffer())
+    return { bytes, displayW, displayH, ext, contentType }
   } catch {
     return null
   }
@@ -60,6 +70,8 @@ export async function exportExcel(entries: GoodsEntry[]): Promise<Blob> {
     bytes: Uint8Array
     mediaName: string
     relId: string
+    displayW: number
+    displayH: number
   }
 
   const images: EmbeddedImage[] = []
@@ -70,14 +82,16 @@ export async function exportExcel(entries: GoodsEntry[]): Promise<Blob> {
     for (let imgIndex = 0; imgIndex < keys.length; imgIndex++) {
       const blob = await getImageBlob(keys[imgIndex])
       if (!blob) continue
-      const bytes = await compressImage(blob)
-      if (!bytes) continue
+      const prepared = await prepareImage(blob)
+      if (!prepared) continue
       images.push({
         rowIndex: index + 1,
         indexInRow: imgIndex,
-        bytes,
-        mediaName: `image${mediaSeq}.jpg`,
+        bytes: prepared.bytes,
+        mediaName: `image${mediaSeq}.${prepared.ext}`,
         relId: `rId${mediaSeq}`,
+        displayW: prepared.displayW,
+        displayH: prepared.displayH,
       })
       mediaSeq++
     }
@@ -103,26 +117,26 @@ export async function exportExcel(entries: GoodsEntry[]): Promise<Blob> {
     if (!shared.has(v)) shared.set(v, shared.size)
     return shared.get(v)!
   }
-  // Pre-register all strings
   textRows.flat().forEach(sid)
 
-  const maxImagesInRow =
-    entries.reduce((max, e) => {
-      const n = e.imageKeys.split('|').filter(Boolean).length
-      return Math.max(max, n)
-    }, 0) || 0
-  const imageColWidth = Math.max(
-    18,
-    (Math.max(maxImagesInRow, 1) * (THUMB_PX + GAP_PX) + 20) / 7
-  )
+  const rowDisplayHeights = new Map<number, number>()
+  const rowDisplayWidths = new Map<number, number>()
+  for (const img of images) {
+    const prevH = rowDisplayHeights.get(img.rowIndex) ?? 0
+    rowDisplayHeights.set(img.rowIndex, Math.max(prevH, img.displayH + 12))
+    const prevW = rowDisplayWidths.get(img.rowIndex) ?? 0
+    const right = img.indexInRow * (DISPLAY_PX + GAP_PX) + img.displayW
+    rowDisplayWidths.set(img.rowIndex, Math.max(prevW, right))
+  }
+  const maxImageWidthPx = Math.max(DISPLAY_PX, ...rowDisplayWidths.values(), 0)
+  const imageColWidth = Math.max(18, (maxImageWidthPx + 20) / 7)
 
   let sheetRows = ''
   textRows.forEach((cols, rIndex) => {
     const excelRow = rIndex + 1
-    const hasImage =
-      rIndex > 0 && entries[rIndex - 1].imageKeys.split('|').some(Boolean)
-    sheetRows += hasImage
-      ? `<row r="${excelRow}" ht="78" customHeight="1">`
+    const imgH = rowDisplayHeights.get(rIndex)
+    sheetRows += imgH
+      ? `<row r="${excelRow}" ht="${(imgH * 0.75).toFixed(1)}" customHeight="1">`
       : `<row r="${excelRow}">`
     cols.forEach((value, cIndex) => {
       sheetRows += `<c r="${cellRef(cIndex, excelRow)}" t="s"><v>${sid(value)}</v></c>`
@@ -138,6 +152,10 @@ export async function exportExcel(entries: GoodsEntry[]): Promise<Blob> {
     `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
     `<Default Extension="xml" ContentType="application/xml"/>` +
     `<Default Extension="jpg" ContentType="image/jpeg"/>` +
+    `<Default Extension="jpeg" ContentType="image/jpeg"/>` +
+    `<Default Extension="png" ContentType="image/png"/>` +
+    `<Default Extension="webp" ContentType="image/webp"/>` +
+    `<Default Extension="gif" ContentType="image/gif"/>` +
     `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
     `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
     `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>`
@@ -215,14 +233,15 @@ export async function exportExcel(entries: GoodsEntry[]): Promise<Blob> {
       `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
       `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
     images.forEach((img, idx) => {
-      const colOff = img.indexInRow * (THUMB_PX + GAP_PX) * EMU_PER_PX
-      const sizeEmu = THUMB_PX * EMU_PER_PX
+      const colOff = img.indexInRow * (DISPLAY_PX + GAP_PX) * EMU_PER_PX
+      const cx = img.displayW * EMU_PER_PX
+      const cy = img.displayH * EMU_PER_PX
       const picId = idx + 1
       drawingXml +=
         `<xdr:oneCellAnchor>` +
         `<xdr:from><xdr:col>5</xdr:col><xdr:colOff>${colOff}</xdr:colOff>` +
         `<xdr:row>${img.rowIndex}</xdr:row><xdr:rowOff>47625</xdr:rowOff></xdr:from>` +
-        `<xdr:ext cx="${sizeEmu}" cy="${sizeEmu}"/>` +
+        `<xdr:ext cx="${cx}" cy="${cy}"/>` +
         `<xdr:pic>` +
         `<xdr:nvPicPr><xdr:cNvPr id="${picId}" name="Picture ${picId}"/><xdr:cNvPicPr/></xdr:nvPicPr>` +
         `<xdr:blipFill><a:blip r:embed="${img.relId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>` +

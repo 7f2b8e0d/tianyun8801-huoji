@@ -42,6 +42,7 @@ export default function App() {
             element={
               <StatsPage
                 stats={stats}
+                entries={entries}
                 onPeriod={setPeriod}
                 onCustomRange={setCustom}
               />

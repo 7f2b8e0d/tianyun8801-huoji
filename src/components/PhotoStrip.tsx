@@ -1,14 +1,15 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from 'react'
+
+export type PhotoStripHandle = {
+  scrollToEnd: () => void
+}
 
 /** Horizontally scrollable photo/action strip; supports touch and mouse drag. */
-export function PhotoStrip({
-  children,
-  className = 'photo-row',
-}: {
+export const PhotoStrip = forwardRef<PhotoStripHandle, {
   children: ReactNode
   className?: string
-}) {
-  const ref = useRef<HTMLDivElement>(null)
+}>(function PhotoStrip({ children, className = 'photo-row' }, ref) {
+  const elRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{
     pointerId: number
     startX: number
@@ -16,8 +17,16 @@ export function PhotoStrip({
     moved: boolean
   } | null>(null)
 
+  useImperativeHandle(ref, () => ({
+    scrollToEnd: () => {
+      const el = elRef.current
+      if (!el) return
+      el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' })
+    },
+  }))
+
   useEffect(() => {
-    const el = ref.current
+    const el = elRef.current
     if (!el) return
 
     const onPointerDown = (e: PointerEvent) => {
@@ -49,7 +58,6 @@ export function PhotoStrip({
       const d = drag.current
       if (!d || d.pointerId !== e.pointerId) return
       if (d.moved) {
-        // Suppress the click that follows a drag.
         const blockClick = (ev: Event) => {
           ev.stopPropagation()
           ev.preventDefault()
@@ -78,8 +86,8 @@ export function PhotoStrip({
   }, [])
 
   return (
-    <div ref={ref} className={className}>
+    <div ref={elRef} className={className}>
       {children}
     </div>
   )
-}
+})

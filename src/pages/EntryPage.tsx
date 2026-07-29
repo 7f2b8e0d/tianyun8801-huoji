@@ -1,11 +1,17 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { IconBack, IconCamera, IconClose, IconGallery } from '../components/Icons'
 import { ImageLightbox } from '../components/ImageLightbox'
-import { PhotoStrip } from '../components/PhotoStrip'
+import { PhotoStrip, type PhotoStripHandle } from '../components/PhotoStrip'
 import { useImageUrl, useImageUrls } from '../hooks/useImageUrl'
 import { fmt } from '../utils/format'
 import type { GoodsEntry } from '../types'
+
+function isLikelyImageFile(file: File): boolean {
+  // Many mobile cameras return an empty MIME type after capture.
+  if (!file.type) return true
+  return file.type.startsWith('image/')
+}
 
 type Props = {
   entries: GoodsEntry[]
@@ -70,6 +76,7 @@ export function EntryPage({ entries, onSave }: Props) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
+  const stripRef = useRef<PhotoStripHandle>(null)
 
   const keepUrls = useImageUrls(keepKeys)
   const lightboxUrls = useMemo(
@@ -83,12 +90,20 @@ export function EntryPage({ entries, onSave }: Props) {
   const priceV = Number(price) || 0
   const qtyV = Number(qty) || 0
   const total = priceV * qtyV
+  const photoCount = keepKeys.length + newImages.length
 
-  const addFiles = (files: FileList | null) => {
-    if (!files?.length) return
+  useEffect(() => {
+    if (photoCount > 0) {
+      // Wait a frame so new thumbs are laid out, then reveal them.
+      requestAnimationFrame(() => stripRef.current?.scrollToEnd())
+    }
+  }, [photoCount])
+
+  const addFiles = (files: File[]) => {
+    if (!files.length) return
     const next: NewImage[] = []
-    Array.from(files).forEach((file) => {
-      if (!file.type.startsWith('image/')) return
+    files.forEach((file) => {
+      if (!isLikelyImageFile(file)) return
       next.push({
         id: `${Date.now()}_${Math.random()}`,
         blob: file,
@@ -104,9 +119,11 @@ export function EntryPage({ entries, onSave }: Props) {
   }
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    e.target.value = ''
-    addFiles(files)
+    const input = e.target
+    // Copy File references before clearing the input (required on some mobiles).
+    const copied = input.files ? Array.from(input.files) : []
+    input.value = ''
+    addFiles(copied)
   }
 
   const handleSave = async () => {
@@ -160,7 +177,7 @@ export function EntryPage({ entries, onSave }: Props) {
 
       <div className="content form">
         <div className="section-label">图片</div>
-        <PhotoStrip>
+        <PhotoStrip ref={stripRef}>
           <button
             type="button"
             className="photo-camera"

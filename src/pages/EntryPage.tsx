@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { IconBack, IconCamera, IconClose } from '../components/Icons'
-import { useImageUrl } from '../hooks/useImageUrl'
+import { IconBack, IconCamera, IconClose, IconGallery } from '../components/Icons'
+import { ImageLightbox } from '../components/ImageLightbox'
+import { useImageUrl, useImageUrls } from '../hooks/useImageUrl'
 import { fmt } from '../utils/format'
 import type { GoodsEntry } from '../types'
 
@@ -23,14 +24,20 @@ type NewImage = { id: string; blob: Blob; preview: string }
 function KeepThumb({
   imageKey,
   onRemove,
+  onOpen,
 }: {
   imageKey: string
   onRemove: () => void
+  onOpen: () => void
 }) {
   const url = useImageUrl(imageKey)
   return (
     <div className="photo-thumb">
-      {url ? <img src={url} alt="" /> : null}
+      {url ? (
+        <button type="button" className="photo-thumb__open" onClick={onOpen} aria-label="查看图片">
+          <img src={url} alt="" />
+        </button>
+      ) : null}
       <button type="button" className="photo-thumb__remove" onClick={onRemove} aria-label="移除">
         <IconClose />
       </button>
@@ -59,30 +66,46 @@ export function EntryPage({ entries, onSave }: Props) {
   const [newImages, setNewImages] = useState<NewImage[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
+
+  const keepUrls = useImageUrls(keepKeys)
+  const lightboxUrls = useMemo(
+    () =>
+      [...keepUrls.map((u) => u ?? ''), ...newImages.map((i) => i.preview)].filter(
+        Boolean
+      ),
+    [keepUrls, newImages]
+  )
 
   const priceV = Number(price) || 0
   const qtyV = Number(qty) || 0
   const total = priceV * qtyV
 
-  const onTakePhoto = () => {
-    fileRef.current?.click()
+  const addFiles = (files: FileList | null) => {
+    if (!files?.length) return
+    const next: NewImage[] = []
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith('image/')) return
+      next.push({
+        id: `${Date.now()}_${Math.random()}`,
+        blob: file,
+        preview: URL.createObjectURL(file),
+      })
+    })
+    if (next.length === 0) {
+      setError('请选择图片文件')
+      return
+    }
+    setNewImages((prev) => [...prev, ...next])
+    setError(null)
   }
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const files = e.target.files
     e.target.value = ''
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setError('需要相机权限才能拍照')
-      return
-    }
-    const preview = URL.createObjectURL(file)
-    setNewImages((prev) => [
-      ...prev,
-      { id: `${Date.now()}_${Math.random()}`, blob: file, preview },
-    ])
-    setError(null)
+    addFiles(files)
   }
 
   const handleSave = async () => {
@@ -135,27 +158,50 @@ export function EntryPage({ entries, onSave }: Props) {
       </header>
 
       <div className="content form">
-        <div className="section-label">拍照</div>
+        <div className="section-label">图片</div>
         <div className="photo-row">
-          <button type="button" className="photo-camera" onClick={onTakePhoto} aria-label="拍照">
+          <button
+            type="button"
+            className="photo-camera"
+            onClick={() => cameraRef.current?.click()}
+            aria-label="拍照"
+          >
             <IconCamera />
+            <span className="photo-camera__label">拍照</span>
           </button>
-          {keepKeys.map((key) => (
+          <button
+            type="button"
+            className="photo-camera"
+            onClick={() => galleryRef.current?.click()}
+            aria-label="相册"
+          >
+            <IconGallery />
+            <span className="photo-camera__label">相册</span>
+          </button>
+          {keepKeys.map((key, i) => (
             <KeepThumb
               key={key}
               imageKey={key}
+              onOpen={() => setViewerIndex(i)}
               onRemove={() => setKeepKeys((prev) => prev.filter((k) => k !== key))}
             />
           ))}
-          {newImages.map((img) => (
+          {newImages.map((img, i) => (
             <div key={img.id} className="photo-thumb">
-              <img src={img.preview} alt="" />
+              <button
+                type="button"
+                className="photo-thumb__open"
+                onClick={() => setViewerIndex(keepKeys.length + i)}
+                aria-label="查看图片"
+              >
+                <img src={img.preview} alt="" />
+              </button>
               <button
                 type="button"
                 className="photo-thumb__remove"
                 onClick={() => {
                   URL.revokeObjectURL(img.preview)
-                  setNewImages((prev) => prev.filter((i) => i.id !== img.id))
+                  setNewImages((prev) => prev.filter((item) => item.id !== img.id))
                 }}
                 aria-label="移除"
               >
@@ -166,10 +212,18 @@ export function EntryPage({ entries, onSave }: Props) {
         </div>
 
         <input
-          ref={fileRef}
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
+          className="sr-only"
+          onChange={onFileChange}
+        />
+        <input
+          ref={galleryRef}
+          type="file"
+          accept="image/*"
+          multiple
           className="sr-only"
           onChange={onFileChange}
         />
@@ -232,6 +286,15 @@ export function EntryPage({ entries, onSave }: Props) {
           {isEdit ? '保存修改' : '保存记录'}
         </button>
       </div>
+
+      {viewerIndex != null && lightboxUrls.length > 0 ? (
+        <ImageLightbox
+          urls={lightboxUrls}
+          index={Math.min(viewerIndex, lightboxUrls.length - 1)}
+          onClose={() => setViewerIndex(null)}
+          onIndexChange={setViewerIndex}
+        />
+      ) : null}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { IconBack, IconDelete, IconEdit } from '../components/Icons'
+import { ImageLightbox } from '../components/ImageLightbox'
 import { useImageUrls } from '../hooks/useImageUrl'
 import type { GoodsEntry } from '../types'
 import { fmt, formatTime } from '../utils/format'
@@ -15,6 +16,7 @@ export function DetailPage({
   const { id } = useParams()
   const navigate = useNavigate()
   const [confirm, setConfirm] = useState(false)
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const entry = useMemo(
     () => entries.find((e) => e.id === Number(id)),
     [entries, id]
@@ -24,6 +26,10 @@ export function DetailPage({
     [entry]
   )
   const urls = useImageUrls(imageKeys)
+  const lightboxUrls = useMemo(
+    () => urls.filter((u): u is string => Boolean(u)),
+    [urls]
+  )
 
   if (!entry) {
     return (
@@ -64,13 +70,19 @@ export function DetailPage({
       </header>
 
       <div className="content form">
-        {urls.length > 0 ? (
+        {lightboxUrls.length > 0 ? (
           <div className="detail-photos">
-            {urls.map((url, i) =>
-              url ? (
-                <img key={imageKeys[i]} src={url} alt="" className="detail-photos__img" />
-              ) : null
-            )}
+            {lightboxUrls.map((url, i) => (
+              <button
+                key={imageKeys[i] ?? url}
+                type="button"
+                className="detail-photos__btn"
+                onClick={() => setViewerIndex(i)}
+                aria-label={`查看图片 ${i + 1}`}
+              >
+                <img src={url} alt="" className="detail-photos__img" />
+              </button>
+            ))}
           </div>
         ) : null}
 
@@ -110,6 +122,15 @@ export function DetailPage({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {viewerIndex != null ? (
+        <ImageLightbox
+          urls={lightboxUrls}
+          index={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+          onIndexChange={setViewerIndex}
+        />
       ) : null}
     </div>
   )

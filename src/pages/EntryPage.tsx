@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { IconBack, IconCamera, IconClose, IconGallery } from '../components/Icons'
 import { ImageLightbox } from '../components/ImageLightbox'
+import { PhotoStrip } from '../components/PhotoStrip'
 import { useImageUrl, useImageUrls } from '../hooks/useImageUrl'
 import { fmt } from '../utils/format'
 import type { GoodsEntry } from '../types'
@@ -159,7 +160,7 @@ export function EntryPage({ entries, onSave }: Props) {
 
       <div className="content form">
         <div className="section-label">图片</div>
-        <div className="photo-row">
+        <PhotoStrip>
           <button
             type="button"
             className="photo-camera"
@@ -209,7 +210,7 @@ export function EntryPage({ entries, onSave }: Props) {
               </button>
             </div>
           ))}
-        </div>
+        </PhotoStrip>
 
         <input
           ref={cameraRef}

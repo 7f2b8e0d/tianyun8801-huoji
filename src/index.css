@@ -273,9 +273,29 @@ textarea {
 
 .photo-row {
   display: flex;
+  flex-wrap: nowrap;
   gap: 10px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+  scrollbar-width: thin;
+}
+
+.photo-row:active {
+  cursor: grabbing;
+}
+
+.photo-row::-webkit-scrollbar {
+  height: 4px;
+}
+
+.photo-row::-webkit-scrollbar-thumb {
+  background: var(--outline);
+  border-radius: 999px;
 }
 
 .photo-camera {
@@ -439,8 +459,20 @@ textarea {
 
 .detail-photos {
   display: flex;
+  flex-wrap: nowrap;
   gap: 10px;
   overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+  scrollbar-width: thin;
+}
+
+.detail-photos:active {
+  cursor: grabbing;
 }
 
 .detail-photos__btn {

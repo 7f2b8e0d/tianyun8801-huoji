@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { IconBack, IconDelete, IconEdit } from '../components/Icons'
 import { ImageLightbox } from '../components/ImageLightbox'
+import { PhotoStrip } from '../components/PhotoStrip'
 import { useImageUrls } from '../hooks/useImageUrl'
 import type { GoodsEntry } from '../types'
 import { fmt, formatTime } from '../utils/format'
@@ -71,7 +72,7 @@ export function DetailPage({
 
       <div className="content form">
         {lightboxUrls.length > 0 ? (
-          <div className="detail-photos">
+          <PhotoStrip className="detail-photos">
             {lightboxUrls.map((url, i) => (
               <button
                 key={imageKeys[i] ?? url}
@@ -83,7 +84,7 @@ export function DetailPage({
                 <img src={url} alt="" className="detail-photos__img" />
               </button>
             ))}
-          </div>
+          </PhotoStrip>
         ) : null}
 
         <InfoBlock label="货号" value={entry.productCode} />
